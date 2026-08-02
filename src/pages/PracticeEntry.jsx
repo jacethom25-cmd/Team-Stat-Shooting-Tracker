@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { todayISO, playerName } from '../lib/helpers'
+import { getCurrentSeason, ensurePracticeSession } from '../lib/seasons'
 
 const EDITABLE_FIELDS = [
   ['win', 'W'], ['loss', 'L'],
@@ -103,12 +104,9 @@ export default function PracticeEntry({ initialDate, initialType }) {
     setSaving(true)
     setError('')
     try {
-      const { data: session, error: upErr } = await supabase
-        .from('practice_sessions')
-        .upsert({ practice_date: date, session_type: sessionType }, { onConflict: 'practice_date,session_type' })
-        .select()
-        .single()
-      if (upErr) throw upErr
+      const currentSeason = await getCurrentSeason()
+      if (!currentSeason) throw new Error('No active season set. Use the season selector in the header to create one.')
+      const session = await ensurePracticeSession(date, sessionType, currentSeason.id)
 
       const payload = players.map((p) => ({
         practice_session_id: session.id,

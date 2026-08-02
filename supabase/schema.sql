@@ -21,6 +21,29 @@ create table if not exists players (
 );
 
 -- ----------------------------------------------------------------------------
+-- SEASONS
+-- Scopes ONLY practice/live-tracking data (practice_sessions and everything
+-- hanging off it below) so a coach can toggle to a new season and have last
+-- season's live-tracked stats "archive" out of the default views without
+-- losing them -- still viewable/exportable by picking that season anywhere
+-- there's a season filter. Shooting drills, FT ladder, and conditioning are
+-- deliberately NOT scoped to a season -- those stay all-time / cross-year.
+-- Only one season may be is_current at a time (enforced by the partial
+-- unique index below); that's the season new Live Tracker / Film Review
+-- entries get tagged with.
+-- ----------------------------------------------------------------------------
+create table if not exists seasons (
+  id uuid primary key default gen_random_uuid(),
+  label text not null unique,
+  start_date date,
+  end_date date,
+  is_current boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists one_current_season on seasons (is_current) where is_current;
+
+-- ----------------------------------------------------------------------------
 -- PRACTICE / GAME STATS
 -- One "practice_sessions" row per date+type, many "practice_stats" rows
 -- (one per player who played) hanging off it. New practice day = new rows,
@@ -30,10 +53,23 @@ create table if not exists practice_sessions (
   id uuid primary key default gen_random_uuid(),
   practice_date date not null,
   session_type text not null default 'Practice' check (session_type in ('Practice','Game')),
+  season_id uuid references seasons(id),
   notes text,
   created_at timestamptz not null default now(),
   unique (practice_date, session_type)
 );
+
+alter table practice_sessions add column if not exists season_id uuid references seasons(id);
+
+-- First run ever: seed a default season and backfill any existing practice
+-- rows onto it, so nothing already logged goes "missing" once the season
+-- filter appears in the UI.
+insert into seasons (label, is_current)
+select '2025-2026', true
+where not exists (select 1 from seasons);
+
+update practice_sessions set season_id = (select id from seasons where is_current = true limit 1)
+where season_id is null;
 
 create table if not exists practice_stats (
   id uuid primary key default gen_random_uuid(),
@@ -89,7 +125,8 @@ select
        else round(ps.ftm::numeric / ps.fta, 4) end as ft_pct,
   (ps.fgm2*2 + ps.fgm3*3 + ps.ftm) as pts,
   (ps.oreb + ps.dreb) as reb,
-  (ps.oreb + ps.dreb + ps.ast + ps.stl + ps.blk + ps.fouls_taken) as power5
+  (ps.oreb + ps.dreb + ps.ast + ps.stl + ps.blk + ps.fouls_taken) as power5,
+  s.season_id
 from practice_stats ps
 join players p on p.id = ps.player_id
 join practice_sessions s on s.id = ps.practice_session_id;
@@ -296,6 +333,7 @@ alter table team_drills enable row level security;
 alter table team_drill_attempts enable row level security;
 alter table shot_events enable row level security;
 alter table possession_events enable row level security;
+alter table seasons enable row level security;
 
 do $$
 declare
@@ -306,7 +344,7 @@ begin
                                 'ft_sessions','conditioning_results',
                                 'practice_drills','drill_lineups',
                                 'team_drills','team_drill_attempts',
-                                'shot_events','possession_events'])
+                                'shot_events','possession_events','seasons'])
   loop
     execute format('drop policy if exists "authenticated_all" on %I', t);
     execute format(

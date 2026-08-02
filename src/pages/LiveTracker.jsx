@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { todayISO, playerName } from '../lib/helpers'
 import { ZONES, zoneByKey } from '../lib/zones'
+import { getCurrentSeason, ensurePracticeSession } from '../lib/seasons'
 
 const BLANK_ROW = {
   win: 0, loss: 0, fgm2: 0, fga2: 0, fgm3: 0, fga3: 0, ftm: 0, fta: 0,
@@ -85,13 +86,24 @@ export default function LiveTracker() {
     setPlayers(playerData)
     if (!selectedId && playerData.length) setSelectedId(playerData[0].id)
 
-    // make sure today's session exists so every tap has somewhere to save to
-    const { data: session, error: sessErr } = await supabase
-      .from('practice_sessions')
-      .upsert({ practice_date: date, session_type: sessionType }, { onConflict: 'practice_date,session_type' })
-      .select()
-      .single()
-    if (sessErr) { setError(sessErr.message); setLoading(false); return }
+    // make sure today's session exists so every tap has somewhere to save to.
+    // New sessions get tagged with whatever season is currently active in
+    // the header switcher; existing sessions keep whatever season they were
+    // originally logged under.
+    let session
+    try {
+      const currentSeason = await getCurrentSeason()
+      if (!currentSeason) {
+        setError('No active season set. Use the season selector in the header to create one.')
+        setLoading(false)
+        return
+      }
+      session = await ensurePracticeSession(date, sessionType, currentSeason.id)
+    } catch (err) {
+      setError(err.message)
+      setLoading(false)
+      return
+    }
     setSessionId(session.id)
 
     const initial = {}

@@ -13,6 +13,7 @@ import PlayerReport from './pages/PlayerReport'
 import ShotChart from './pages/ShotChart'
 import Standards from './pages/Standards'
 import Trends from './pages/Trends'
+import SeasonSwitcher from './components/SeasonSwitcher'
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -34,6 +35,7 @@ export default function App() {
   const [checkingAuth, setCheckingAuth] = useState(true)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [practiceJump, setPracticeJump] = useState(null) // {date, type}
+  const [seasonVersion, setSeasonVersion] = useState(0)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -64,6 +66,7 @@ export default function App() {
       <header className="app-header">
         <h1>🏀 Team Stat Tracker</h1>
         <div className="row" style={{ gap: 12 }}>
+          <SeasonSwitcher onChanged={() => setSeasonVersion((v) => v + 1)} />
           <span className="user-email">{session.user.email}</span>
           <button className="secondary" onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
@@ -80,24 +83,24 @@ export default function App() {
         ))}
       </nav>
       <main>
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'live' && <LiveTracker />}
+        {activeTab === 'dashboard' && <Dashboard key={seasonVersion} />}
+        {activeTab === 'live' && <LiveTracker key={seasonVersion} />}
         {activeTab === 'practice' && (
           <PracticeEntry
-            key={practiceJump?.nonce || 'default'}
+            key={`${practiceJump?.nonce || 'default'}-${seasonVersion}`}
             initialDate={practiceJump?.date}
             initialType={practiceJump?.type}
           />
         )}
-        {activeTab === 'history' && <PracticeHistory onOpenSession={openSession} />}
+        {activeTab === 'history' && <PracticeHistory key={seasonVersion} onOpenSession={openSession} />}
         {activeTab === 'shooting' && <Shooting />}
         {activeTab === 'ft' && <FreeThrow />}
         {activeTab === 'conditioning' && <Conditioning />}
-        {activeTab === 'shotchart' && <ShotChart />}
+        {activeTab === 'shotchart' && <ShotChart key={seasonVersion} />}
         {activeTab === 'standards' && <Standards />}
-        {activeTab === 'trends' && <Trends />}
+        {activeTab === 'trends' && <Trends key={seasonVersion} />}
         {activeTab === 'roster' && <Roster />}
-        {activeTab === 'report' && <PlayerReport />}
+        {activeTab === 'report' && <PlayerReport key={seasonVersion} />}
       </main>
     </>
   )

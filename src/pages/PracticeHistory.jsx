@@ -1,24 +1,36 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { sum } from '../lib/helpers'
+import { getAllSeasons, getCurrentSeason } from '../lib/seasons'
 
 export default function PracticeHistory({ onOpenSession }) {
   const [sessions, setSessions] = useState([])
+  const [seasons, setSeasons] = useState([])
+  const [seasonFilter, setSeasonFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    load()
+    getAllSeasons().then(setSeasons).catch((err) => setError(err.message))
+    getCurrentSeason().then((s) => setSeasonFilter(s ? s.id : 'all')).catch((err) => setError(err.message))
   }, [])
+
+  useEffect(() => {
+    if (!seasonFilter) return
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seasonFilter])
 
   async function load() {
     setLoading(true)
     setError('')
-    const { data: sessionData, error: sErr } = await supabase
+    let sessionQuery = supabase
       .from('practice_sessions')
       .select('*')
       .order('practice_date', { ascending: false })
       .limit(60)
+    if (seasonFilter !== 'all') sessionQuery = sessionQuery.eq('season_id', seasonFilter)
+    const { data: sessionData, error: sErr } = await sessionQuery
     if (sErr) { setError(sErr.message); setLoading(false); return }
 
     const { data: statRows, error: vErr } = await supabase
@@ -49,7 +61,18 @@ export default function PracticeHistory({ onOpenSession }) {
 
   return (
     <div className="card">
-      <h2>Practice / game history</h2>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2>Practice / game history</h2>
+        <div style={{ minWidth: 180 }}>
+          <label>Program season</label>
+          <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)}>
+            {seasons.map((s) => (
+              <option key={s.id} value={s.id}>{s.is_current ? `★ ${s.label}` : s.label}</option>
+            ))}
+            <option value="all">All seasons</option>
+          </select>
+        </div>
+      </div>
       {error && <div className="error-text">{error}</div>}
       {loading ? (
         <p className="muted">Loading…</p>

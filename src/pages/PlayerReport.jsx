@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { periodRange, todayISO, sum, playerName } from '../lib/helpers'
 import { toCSV, downloadCSV, safeFileSlug } from '../lib/csv'
+import { getAllSeasons, getCurrentSeason } from '../lib/seasons'
 
 export default function PlayerReport() {
   const [allPlayers, setAllPlayers] = useState([])
@@ -9,6 +10,8 @@ export default function PlayerReport() {
   const [period, setPeriod] = useState('season')
   const [anchor, setAnchor] = useState(todayISO())
   const [seasonStart, setSeasonStart] = useState('')
+  const [seasons, setSeasons] = useState([])
+  const [seasonFilter, setSeasonFilter] = useState('')
 
   const [practiceRows, setPracticeRows] = useState([])
   const [shootingRows, setShootingRows] = useState([])
@@ -27,20 +30,24 @@ export default function PlayerReport() {
         if (!playerId && data.length) setPlayerId(data[0].id)
       }
     })
+    getAllSeasons().then(setSeasons).catch((err) => setError(err.message))
+    getCurrentSeason().then((s) => setSeasonFilter(s ? s.id : 'all')).catch((err) => setError(err.message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    if (!playerId) return
+    if (!playerId || !seasonFilter) return
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerId, start, end])
+  }, [playerId, start, end, seasonFilter])
 
   async function load() {
     setLoading(true)
     setError('')
+    let practiceQuery = supabase.from('v_practice_stats').select('*').eq('player_id', playerId).gte('practice_date', start).lte('practice_date', end).order('practice_date')
+    if (seasonFilter !== 'all') practiceQuery = practiceQuery.eq('season_id', seasonFilter)
     const [pr, sh, ft, cond] = await Promise.all([
-      supabase.from('v_practice_stats').select('*').eq('player_id', playerId).gte('practice_date', start).lte('practice_date', end).order('practice_date'),
+      practiceQuery,
       supabase.from('shooting_attempts').select('*, shooting_drills(name, standard, great)').eq('player_id', playerId).gte('attempt_date', start).lte('attempt_date', end).order('attempt_date'),
       supabase.from('ft_sessions').select('*').eq('player_id', playerId).gte('session_date', start).lte('session_date', end).order('session_date'),
       supabase.from('conditioning_results').select('*').eq('player_id', playerId).order('test_date'),
@@ -141,8 +148,17 @@ export default function PlayerReport() {
               <input type="date" value={seasonStart} onChange={(e) => setSeasonStart(e.target.value)} />
             </div>
           )}
+          <div>
+            <label>Program season</label>
+            <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)}>
+              {seasons.map((s) => (
+                <option key={s.id} value={s.id}>{s.is_current ? `★ ${s.label}` : s.label}</option>
+              ))}
+              <option value="all">All seasons</option>
+            </select>
+          </div>
         </div>
-        <p className="small muted">{start} → {end}</p>
+        <p className="small muted">{start} → {end} · practice/game stats scoped to program season above; shooting drills, FT ladder, and conditioning are always all-time.</p>
         {error && <div className="error-text">{error}</div>}
       </div>
 

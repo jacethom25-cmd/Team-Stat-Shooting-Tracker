@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient'
 import { periodRange, todayISO, playerName } from '../lib/helpers'
 import { ZONES } from '../lib/zones'
 import CourtDiagram from '../components/CourtDiagram'
+import { getAllSeasons, getCurrentSeason } from '../lib/seasons'
 
 export default function ShotChart() {
   const [allPlayers, setAllPlayers] = useState([])
@@ -10,6 +11,8 @@ export default function ShotChart() {
   const [period, setPeriod] = useState('week')
   const [anchor, setAnchor] = useState(todayISO())
   const [seasonStart, setSeasonStart] = useState('')
+  const [seasons, setSeasons] = useState([])
+  const [seasonFilter, setSeasonFilter] = useState('')
   const [shots, setShots] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -21,22 +24,26 @@ export default function ShotChart() {
       if (error) setError(error.message)
       else setAllPlayers(data)
     })
+    getAllSeasons().then(setSeasons).catch((err) => setError(err.message))
+    getCurrentSeason().then((s) => setSeasonFilter(s ? s.id : 'all')).catch((err) => setError(err.message))
   }, [])
 
   useEffect(() => {
+    if (!seasonFilter) return
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerId, start, end])
+  }, [playerId, start, end, seasonFilter])
 
   async function load() {
     setLoading(true)
     setError('')
     let query = supabase
       .from('shot_events')
-      .select('*, practice_sessions!inner(practice_date, session_type)')
+      .select('*, practice_sessions!inner(practice_date, session_type, season_id)')
       .gte('practice_sessions.practice_date', start)
       .lte('practice_sessions.practice_date', end)
     if (playerId !== 'team') query = query.eq('player_id', playerId)
+    if (seasonFilter !== 'all') query = query.eq('practice_sessions.season_id', seasonFilter)
     const { data, error } = await query
     if (error) setError(error.message)
     else setShots(data)
@@ -119,6 +126,15 @@ export default function ShotChart() {
               <input type="date" value={seasonStart} onChange={(e) => setSeasonStart(e.target.value)} />
             </div>
           )}
+          <div>
+            <label>Program season</label>
+            <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)}>
+              {seasons.map((s) => (
+                <option key={s.id} value={s.id}>{s.is_current ? `★ ${s.label}` : s.label}</option>
+              ))}
+              <option value="all">All seasons</option>
+            </select>
+          </div>
         </div>
         <p className="small muted" style={{ marginTop: 8 }}>
           {start} → {end} · {overall.attempts} shot{overall.attempts === 1 ? '' : 's'} logged

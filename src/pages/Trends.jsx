@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { todayISO, playerName } from '../lib/helpers'
 import LineChart from '../components/LineChart'
+import { getAllSeasons, getCurrentSeason } from '../lib/seasons'
 
 const PRACTICE_STATS = [
   { key: 'pts', label: 'Points', pct: false },
@@ -35,6 +36,8 @@ export default function Trends() {
   const [drillId, setDrillId] = useState('')
   const [fromDate, setFromDate] = useState(daysAgoISO(90))
   const [toDate, setToDate] = useState(todayISO())
+  const [seasons, setSeasons] = useState([])
+  const [seasonFilter, setSeasonFilter] = useState('')
 
   const [practiceRows, setPracticeRows] = useState([])
   const [shootingRows, setShootingRows] = useState([])
@@ -55,12 +58,15 @@ export default function Trends() {
         if (data.length) setDrillId((prev) => prev || data[0].id)
       }
     })
+    getAllSeasons().then(setSeasons).catch((err) => setError(err.message))
+    getCurrentSeason().then((s) => setSeasonFilter(s ? s.id : 'all')).catch((err) => setError(err.message))
   }, [])
 
   useEffect(() => {
+    if (metricType === 'practice' && !seasonFilter) return // seasons still loading
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metricType, playerId, drillId, fromDate, toDate])
+  }, [metricType, playerId, drillId, fromDate, toDate, seasonFilter])
 
   async function load() {
     setLoading(true)
@@ -68,6 +74,7 @@ export default function Trends() {
     if (metricType === 'practice') {
       let q = supabase.from('v_practice_stats').select('*').gte('practice_date', fromDate).lte('practice_date', toDate)
       if (playerId !== 'team') q = q.eq('player_id', playerId)
+      if (seasonFilter !== 'all') q = q.eq('season_id', seasonFilter)
       const { data, error } = await q.order('practice_date')
       if (error) setError(error.message); else setPracticeRows(data || [])
     } else if (metricType === 'shooting') {
@@ -188,6 +195,17 @@ export default function Trends() {
               <label>Stat</label>
               <select value={practiceStatKey} onChange={(e) => setPracticeStatKey(e.target.value)}>
                 {PRACTICE_STATS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </div>
+          )}
+          {metricType === 'practice' && (
+            <div style={{ flex: '1 1 160px' }}>
+              <label>Program season</label>
+              <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)}>
+                {seasons.map((s) => (
+                  <option key={s.id} value={s.id}>{s.is_current ? `★ ${s.label}` : s.label}</option>
+                ))}
+                <option value="all">All seasons</option>
               </select>
             </div>
           )}

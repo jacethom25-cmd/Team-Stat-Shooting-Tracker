@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { periodRange, todayISO, sum, playerName } from '../lib/helpers'
 import { toCSV, downloadCSV } from '../lib/csv'
+import { getAllSeasons, getCurrentSeason } from '../lib/seasons'
 
 const LEADERBOARDS = [
   { key: 'power5', label: 'Sum of Power 5' },
@@ -16,6 +17,8 @@ export default function Dashboard() {
   const [anchor, setAnchor] = useState(todayISO())
   const [seasonStart, setSeasonStart] = useState('')
   const [sessionFilter, setSessionFilter] = useState('All')
+  const [seasons, setSeasons] = useState([])
+  const [seasonFilter, setSeasonFilter] = useState('') // '' = not loaded yet, 'all' = every season
   const [rows, setRows] = useState([])
   const [allPlayers, setAllPlayers] = useState([])
   const [possessionEvents, setPossessionEvents] = useState([])
@@ -29,13 +32,16 @@ export default function Dashboard() {
       if (error) setError(error.message)
       else setAllPlayers(data)
     })
+    getAllSeasons().then((data) => setSeasons(data)).catch((err) => setError(err.message))
+    getCurrentSeason().then((s) => setSeasonFilter(s ? s.id : 'all')).catch((err) => setError(err.message))
   }, [])
 
   useEffect(() => {
+    if (!seasonFilter) return // seasons still loading
     load()
     loadPossessions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [start, end, sessionFilter])
+  }, [start, end, sessionFilter, seasonFilter])
 
   async function load() {
     setLoading(true)
@@ -46,6 +52,7 @@ export default function Dashboard() {
       .gte('practice_date', start)
       .lte('practice_date', end)
     if (sessionFilter !== 'All') query = query.eq('session_type', sessionFilter)
+    if (seasonFilter !== 'all') query = query.eq('season_id', seasonFilter)
     const { data, error } = await query
     if (error) setError(error.message)
     else setRows(data)
@@ -55,10 +62,11 @@ export default function Dashboard() {
   async function loadPossessions() {
     let query = supabase
       .from('possession_events')
-      .select('*, practice_sessions!inner(practice_date, session_type)')
+      .select('*, practice_sessions!inner(practice_date, session_type, season_id)')
       .gte('practice_sessions.practice_date', start)
       .lte('practice_sessions.practice_date', end)
     if (sessionFilter !== 'All') query = query.eq('practice_sessions.session_type', sessionFilter)
+    if (seasonFilter !== 'all') query = query.eq('practice_sessions.season_id', seasonFilter)
     const { data, error } = await query
     if (error) setError(error.message)
     else setPossessionEvents(data || [])
@@ -234,6 +242,15 @@ export default function Dashboard() {
               <option>All</option>
               <option>Practice</option>
               <option>Game</option>
+            </select>
+          </div>
+          <div>
+            <label>Program season</label>
+            <select value={seasonFilter} onChange={(e) => setSeasonFilter(e.target.value)}>
+              {seasons.map((s) => (
+                <option key={s.id} value={s.id}>{s.is_current ? `★ ${s.label}` : s.label}</option>
+              ))}
+              <option value="all">All seasons</option>
             </select>
           </div>
         </div>
